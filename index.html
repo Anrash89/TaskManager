@@ -64,6 +64,12 @@
             background-color: #505050;
             color: #d1d5db;
         }
+        
+        /* Активный фильтр */
+        .active-filter {
+            background-color: var(--tg-accent) !important;
+            color: white !important;
+        }
     </style>
 </head>
 <body class="min-h-screen" onload="initApp()">
@@ -79,17 +85,22 @@
             </button>
         </header>
 
-        <!-- Фильтры/Статус-панель -->
-        <div class="flex space-x-2 p-2 bg-gray-800 rounded-xl shadow-inner text-sm overflow-x-auto" id="statusFilterButtons">
-            <!-- Кнопки будут заполнены динамически -->
-            <button class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterTasks('all')">Все (0)</button>
+        <!-- Фильтры: Общая панель -->
+        <div class="space-y-2">
+            <!-- Кнопка сброса фильтров -->
+            <div class="flex">
+                <button onclick="resetFilters()" class="px-3 py-1.5 rounded-xl bg-gray-700 text-gray-300 text-sm hover:bg-gray-600 w-full">Сбросить все фильтры</button>
+            </div>
+             <!-- Фильтр 1: Статус -->
+            <div class="flex space-x-2 p-2 bg-gray-800 rounded-xl shadow-inner text-xs overflow-x-auto" id="statusFilterButtons">
+                <!-- Кнопки будут заполнены динамически -->
+            </div>
+            
+             <!-- Фильтр 2: Категория -->
+            <div class="flex space-x-2 p-2 bg-gray-800 rounded-xl shadow-inner text-xs overflow-x-auto" id="categoryFilterButtons">
+                <!-- Кнопки будут заполнены динамически -->
+            </div>
         </div>
-        
-        <!-- Фильтр по категориям (Новое улучшение) -->
-        <div class="flex space-x-2 p-2 bg-gray-800 rounded-xl shadow-inner text-sm overflow-x-auto" id="categoryFilterButtons">
-            <button class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterByCategory('all')">Все Категории</button>
-        </div>
-
 
         <!-- Список Заданий -->
         <div id="taskList" class="space-y-3">
@@ -313,13 +324,17 @@
             const priorityInfo = PRIORITY_MAP[task.Приоритет] || PRIORITY_MAP['medium'];
             
             let assigneeKey = task.Ответственный;
-            if (task.Ответственный && task.Ответственный.includes('+')) {
-                assigneeKey = task.Ответственный.trim();
-            } else if (task.Ответственный && task.Ответственный.includes('→')) {
-                 // Учитываем формат "Виктория → Лиза" как "Лиза" (финальный ответственный)
-                assigneeKey = task.Ответственный.split('→').pop().trim(); 
+            if (task.Ответственный) {
+                if (task.Ответственный.includes('+')) {
+                    assigneeKey = task.Ответственный.trim();
+                } else if (task.Ответственный.includes('→')) {
+                     // Учитываем формат "Виктория → Лиза" как "Лиза" (финальный ответственный)
+                    assigneeKey = task.Ответственный.split('→').pop().trim(); 
+                } else {
+                    assigneeKey = task.Ответственный.trim();
+                }
             }
-            const assigneeInfo = USER_MAP[assigneeKey] || { id: 'unknown', name: task.Ответственный || 'Не назначен' };
+            const assigneeInfo = USER_MAP[assigneeKey] || { id: 'unknown_' + assigneeKey.replace(/\s/g, '_'), name: task.Ответственный || 'Не назначен' };
 
             return {
                 id: `csv-task-${index}`,
@@ -529,8 +544,8 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                                 <span>${task.assigneeName}</span>
                             </div>
                             <!-- Дедлайн -->
-                            <div class="flex items-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-1 ${isOverdue ? 'text-red-500' : 'text-yellow-400'}"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <div class="flex items-center font-medium ${isOverdue ? 'text-red-500' : 'text-yellow-400'}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-1"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                 <span>${task.deadline ? task.deadline : 'Нет срока'} ${isOverdue ? '(Просрочено)' : ''}</span>
                             </div>
                         </div>
@@ -546,37 +561,40 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             }).join('');
         }
         
+        // --- Логика сброса фильтров ---
+        window.resetFilters = () => {
+            window.activeStatusFilter = 'all';
+            window.activeCategoryFilter = 'all';
+            renderTasks();
+        };
+
         // --- Логика фильтрации по статусу ---
         window.filterTasks = (filterKey) => {
             window.activeStatusFilter = filterKey;
             
             document.querySelectorAll('#statusFilterButtons button').forEach(btn => {
-                btn.classList.remove('bg-blue-600', 'text-white');
-                btn.classList.add('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
+                btn.classList.remove('active-filter');
             });
 
             const currentButton = document.getElementById(`filter-status-${filterKey}`);
             if(currentButton) {
-                currentButton.classList.remove('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
-                currentButton.classList.add('bg-blue-600', 'text-white');
+                currentButton.classList.add('active-filter');
             }
             
             renderTasks();
         };
 
-        // --- Логика фильтрации по категориям (НОВОЕ) ---
+        // --- Логика фильтрации по категориям ---
         window.filterByCategory = (category) => {
             window.activeCategoryFilter = category;
             
             document.querySelectorAll('#categoryFilterButtons button').forEach(btn => {
-                btn.classList.remove('bg-blue-600', 'text-white');
-                btn.classList.add('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
+                btn.classList.remove('active-filter');
             });
 
             const currentButton = document.getElementById(`filter-category-${category}`);
             if(currentButton) {
-                currentButton.classList.remove('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
-                currentButton.classList.add('bg-blue-600', 'text-white');
+                currentButton.classList.add('active-filter');
             }
             
             renderTasks();
@@ -597,15 +615,22 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 }
             });
 
+            // Обновление кнопок статуса
             const filterContainer = document.getElementById('statusFilterButtons');
             filterContainer.innerHTML = `
-                <button id="filter-status-all" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('all')">Все (${counts.all})</button>
-                <button id="filter-status-in_progress" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'in_progress' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('in_progress')">${STATUS_MAP.in_progress.display} (${counts.in_progress})</button>
-                <button id="filter-status-assigned" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'assigned' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('assigned')">${STATUS_MAP.assigned.display} (${counts.assigned})</button>
-                <button id="filter-status-on_hold" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'on_hold' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('on_hold')">${STATUS_MAP.on_hold.display} (${counts.on_hold})</button>
-                <button id="filter-status-done" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'done' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('done')">${STATUS_MAP.done.display} (${counts.done})</button>
-                <button id="filter-status-overdue" class="px-3 py-1.5 rounded-full ${counts.overdue > 0 || window.activeStatusFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-600 hover:bg-red-500 text-white font-medium'}" onclick="filterTasks('overdue')">Просрочено (${counts.overdue})</button>
+                <button id="filter-status-all" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'all' ? 'active-filter' : ''}" onclick="filterTasks('all')">Все (${counts.all})</button>
+                <button id="filter-status-in_progress" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'in_progress' ? 'active-filter' : ''}" onclick="filterTasks('in_progress')">${STATUS_MAP.in_progress.display} (${counts.in_progress})</button>
+                <button id="filter-status-assigned" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'assigned' ? 'active-filter' : ''}" onclick="filterTasks('assigned')">${STATUS_MAP.assigned.display} (${counts.assigned})</button>
+                <button id="filter-status-on_hold" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'on_hold' ? 'active-filter' : ''}" onclick="filterTasks('on_hold')">${STATUS_MAP.on_hold.display} (${counts.on_hold})</button>
+                <button id="filter-status-done" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'done' ? 'active-filter' : ''}" onclick="filterTasks('done')">${STATUS_MAP.done.display} (${counts.done})</button>
+                <button id="filter-status-overdue" class="px-3 py-1.5 rounded-full ${counts.overdue > 0 || window.activeStatusFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-600 hover:bg-red-500 text-white font-medium'} ${window.activeStatusFilter === 'overdue' ? 'active-filter' : ''}" onclick="filterTasks('overdue')">Просрочено (${counts.overdue})</button>
             `;
+            
+            // Если "Просрочено" активно, но не должно быть, убираем синий акцент, оставляем красный
+            const overdueBtn = document.getElementById('filter-status-overdue');
+            if(window.activeStatusFilter === 'overdue' && overdueBtn && counts.overdue === 0) {
+                overdueBtn.classList.remove('active-filter');
+            }
         }
         
         function populateAssigneeDropdown() {
@@ -628,7 +653,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
 
             const categoryFilterContainer = document.getElementById('categoryFilterButtons');
             categoryFilterContainer.innerHTML = `
-                 <button id="filter-category-all" class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterByCategory('all')">Все Категории</button>
+                 <button id="filter-category-all" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeCategoryFilter === 'all' ? 'active-filter' : ''}" onclick="filterByCategory('all')">Все Категории</button>
             `;
 
             uniqueCategories.forEach(category => {
@@ -641,7 +666,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 // Для фильтра
                 const button = document.createElement('button');
                 button.id = `filter-category-${category}`;
-                button.className = 'px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200';
+                button.className = `px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeCategoryFilter === category ? 'active-filter' : ''}`;
                 button.textContent = category;
                 button.onclick = () => filterByCategory(category);
                 categoryFilterContainer.appendChild(button);
@@ -656,7 +681,8 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             if (id === 'taskDetailModal' && taskId) {
                 const task = window.currentTasks[taskId];
                 if (!task) {
-                    console.error("Task not found:", taskId);
+                    // Это была главная причина ошибки. Если задача не найдена, модальное окно не может быть заполнено.
+                    console.error("Task not found with ID:", taskId);
                     closeModal(id);
                     return;
                 }
@@ -708,12 +734,13 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             
             commentsList.innerHTML = comments.map(comment => {
                 const isRevision = comment.isRevision;
-                const user = Object.values(USER_MAP).find(u => u.id === comment.userId) || { name: 'Неизвестный' };
+                // В моковом режиме userId будет 'mockUserId', поэтому ищем по userName или используем заглушку
+                const userName = comment.userName || Object.values(USER_MAP).find(u => u.id === comment.userId)?.name || 'Неизвестный';
                 const time = comment.timestamp instanceof Date ? comment.timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
                 return `
                     <div class="bg-gray-700 p-3 rounded-lg text-sm ${isRevision ? 'border-l-4 border-red-500' : ''}">
-                        <p class="font-medium ${isRevision ? 'text-red-400' : 'text-blue-400'}">${comment.userName || user.name} <span class="text-xs text-gray-500"> (${time})</span></p>
+                        <p class="font-medium ${isRevision ? 'text-red-400' : 'text-blue-400'}">${userName} <span class="text-xs text-gray-500"> (${time})</span></p>
                         <p class="text-gray-300">${comment.text}</p>
                         ${isRevision ? '<span class="block text-xs text-gray-400 mt-1 italic">— Это отметка о внесении правки.</span>' : ''}
                     </div>
@@ -769,6 +796,8 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                     const mockId = 'new-task-' + Date.now();
                     window.currentTasks[mockId] = { ...newTaskData, id: mockId, isMock: false, createdAt: new Date(), isMock: true };
                     renderTasks();
+                    // Перезаполним выпадающие списки, чтобы включить новую категорию, если она была добавлена
+                    populateCategoryDropdown(Object.values(window.currentTasks));
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
