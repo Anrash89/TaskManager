@@ -58,6 +58,12 @@
         .border-high { border-color: #ef4444; } /* Red */
         .border-medium { border-color: #f59e0b; } /* Yellow */
         .border-low { border-color: #10b981; } /* Green */
+
+        /* Стили для метки категории */
+        .category-tag {
+            background-color: #505050;
+            color: #d1d5db;
+        }
     </style>
 </head>
 <body class="min-h-screen" onload="initApp()">
@@ -78,6 +84,12 @@
             <!-- Кнопки будут заполнены динамически -->
             <button class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterTasks('all')">Все (0)</button>
         </div>
+        
+        <!-- Фильтр по категориям (Новое улучшение) -->
+        <div class="flex space-x-2 p-2 bg-gray-800 rounded-xl shadow-inner text-sm overflow-x-auto" id="categoryFilterButtons">
+            <button class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterByCategory('all')">Все Категории</button>
+        </div>
+
 
         <!-- Список Заданий -->
         <div id="taskList" class="space-y-3">
@@ -105,6 +117,15 @@
                                class="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
                     
+                    <!-- Категория (для новых задач) -->
+                    <div>
+                        <label for="taskCategory" class="block text-sm font-medium mb-1">Категория</label>
+                        <select id="taskCategory" class="w-full px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="" disabled selected>Выберите категорию</option>
+                            <!-- Опции будут заполнены динамически из уникальных категорий -->
+                        </select>
+                    </div>
+
                     <!-- Описание -->
                     <div>
                         <label for="taskDescription" class="block text-sm font-medium mb-1">Описание / Текст задания</label>
@@ -170,6 +191,7 @@
 
                 <!-- Основные данные -->
                 <div class="space-y-2 text-sm text-gray-300">
+                    <p><span class="font-semibold text-gray-100">Категория:</span> <span id="detailTaskCategory" class="category-tag px-2 py-0.5 rounded-full text-xs font-medium"></span></p>
                     <p><span class="font-semibold text-gray-100">Исполнитель:</span> <span id="detailTaskAssignee"></span></p>
                     <p><span class="font-semibold text-gray-100">Дедлайн:</span> <span id="detailTaskDeadline"></span></p>
                     <p><span class="font-semibold text-gray-100">Статус:</span> <span id="detailTaskStatus" class="px-2 py-0.5 rounded-full text-xs text-white font-medium"></span></p>
@@ -249,6 +271,9 @@
         window.userId = 'mockUserId';
         window.currentTasks = {}; // Глобальное хранилище задач
         window.currentTaskId = null; // ID текущей открытой задачи
+        window.activeCategoryFilter = 'all'; // Текущий активный фильтр по категории
+        window.activeStatusFilter = 'all'; // Текущий активный фильтр по статусу
+
 
         const USER_MAP = {
             'Anrush': { id: 'user_anrush', name: 'Anrush' },
@@ -258,6 +283,7 @@
             'Виктория + Лиза': { id: 'user_viktoria_liza', name: 'В. + Л.' },
             'Руслан': { id: 'user_ruslan', name: 'Руслан' },
             'Елизавета': { id: 'user_elizaveta', name: 'Елизавета' },
+            'Лиза + Виктория': { id: 'user_liza_viktoria', name: 'Л. + В.' }, // Добавлено из Маркетинг и РК
             'me': { id: 'current_user_id', name: 'Я' }
         };
 
@@ -285,40 +311,47 @@
         function normalizeTask(task, index) {
             const statusInfo = STATUS_MAP[task.Статус] || STATUS_MAP['assigned'];
             const priorityInfo = PRIORITY_MAP[task.Приоритет] || PRIORITY_MAP['medium'];
-            const assigneeInfo = USER_MAP[task.Ответственный] || { id: 'unknown', name: task.Ответственный || 'Не назначен' };
+            
+            let assigneeKey = task.Ответственный;
+            if (task.Ответственный && task.Ответственный.includes('+')) {
+                assigneeKey = task.Ответственный.trim();
+            } else if (task.Ответственный && task.Ответственный.includes('→')) {
+                 // Учитываем формат "Виктория → Лиза" как "Лиза" (финальный ответственный)
+                assigneeKey = task.Ответственный.split('→').pop().trim(); 
+            }
+            const assigneeInfo = USER_MAP[assigneeKey] || { id: 'unknown', name: task.Ответственный || 'Не назначен' };
 
             return {
                 id: `csv-task-${index}`,
                 title: task.Задача,
-                category: task.Категория,
+                category: task.Категория || 'Прочее', // Добавлено: Категория
                 author: task.Автор,
                 assigneeId: assigneeInfo.id,
                 assigneeName: assigneeInfo.name,
-                deadline: task.Дедлайн || null, // Дедлайн из CSV может быть пустым
+                deadline: task.Дедлайн || null, 
                 status: statusInfo.key,
                 priority: priorityInfo.key,
-                description: task["Подзадачи / Комментарии"] || task.Задача, // Используем Комментарии как описание
+                description: task["Подзадачи / Комментарии"] || task.Задача, 
                 links: task["Ссылки / Референсы"] || null,
-                // Для загруженных задач, комментарии будут пустыми, но мы оставим поле для добавления
                 comments: [], 
                 revisionCount: 0, 
                 createdAt: new Date(),
-                isMock: true // Отметка, что задача загружена из CSV-мока
+                isMock: true
             };
         }
 
-        // --- ДАННЫЕ ИЗ CSV (Task_Manager_RomanMagic.xlsx - Сводный.csv) ---
+        // --- ДАННЫЕ ИЗ CSV (TaskManager - Сводный.csv) ---
         const RAW_CSV_DATA = `Категория,Задача,Автор,Ответственный,Статус,Приоритет,Дедлайн,Подзадачи / Комментарии,Ссылки / Референсы
 Инфографика,Сделать ТЗ на инфографику для набора «75 фокусов»,Виктория,Лиза,🔧 В работе,Высокий,,Работа по ТЗ; уточнение от Насти: «работаешь по ТЗ?»
 Инфографика,Подготовить варианты инфографики в стиле «Майнкрафт»,Настя Крепак,Лиза,⭕ Назначена,Средний,,,
-Инфографика,Инфографика для набора «Модельер»,Виктория,Лиза,🔧 В работе,Высокий,,Лиза спрашивала про ТЗ; подготовить и передать,
+Инфографика,Инфографика для набора «Модельер»,Виктория,Лиза,🔧 В работе,Высокий,,Лиза спрашивала про ТЗ; подготовить и передать
 Инфографика,Добавить значок «Оригинал» на карточку,Настя Крепак,Лиза,⭕ Назначена,Средний,,,
-Инфографика,Переделать инфографику/слайды в более ярком стиле,Настя Крепак,Лиза,⭕ Назначена,Высокий,,Сделать как в примере по яркости,
-Инфографика,"Главное фото: УТП вместо «75 фокусов», без перегруза",Настя Крепак,Лиза,🟡 Ожидает,Высокий,,"Карточка для продажи, не афиша",
+Инфографика,Переделать инфографику/слайды в более ярком стиле,Настя Крепак,Лиза,⭕ Назначена,Высокий,,Сделать как в примере по яркости
+Инфографика,"Главное фото: УТП вместо «75 фокусов», без перегруза",Настя Крепак,Лиза,🟡 Ожидает,Высокий,,"Карточка для продажи, не афиша"
 Инфографика,Несколько версий обложек и отправить Вике,Настя Крепак,Лиза,🔧 В работе,Высокий,,,
 Карточки маркетплейсов,Переработать главное фото 75 Фокусов (акцент на УТП),Настя Крепак,Лиза,⭕ Назначена,Высокий,,,
 Карточки маркетплейсов,Сделать белый фон на старой карточке «Модельер» до новых фото,Елизавета,Лиза,⭕ Назначена,Средний,,,
-Карточки маркетплейсов,Написать ТЗ на карточку «Дело в Шляпе»,Руслан,"Виктория + Лиза",⭕ Назначена,Высокий,,,
+Карточки маркетплейсов,Написать ТЗ на карточку «Дело в Шляпе»,Руслан,Виктория + Лиза,⭕ Назначена,Высокий,,,
 Карточки маркетплейсов,Адаптировать карточку 75 Фокусов под «Дело в Шляпе»,Руслан,Лиза,⭕ Назначена,Средний,,,
 Креативы и Контент,Переделать креативы в более ярком стиле,Настя Крепак,Лиза,⭕ Назначена,Средний,,,
 Креативы и Контент,Подготовить несколько креативов и отправить Вике,Настя Крепак,Лиза,🔧 В работе,Высокий,,,
@@ -333,11 +366,11 @@ IT и Боты и Автоматизация,Автосохранение про
 IT и Боты и Автоматизация,Исправить «Продолжить просмотр» — не перезапускать intro,Anrush,Anrush,⭕ Назначена,Высокий,,,
 IT и Боты и Автоматизация,Добавить мини-прелоадер при действиях,Anrush,Anrush,⭕ Назначена,Средний,,,
 IT и Боты и Автоматизация,Реализовать CRM в Telegram-боте (задачи/ответственные/сроки),Anrush,Anrush,⭕ Назначена,Высокий,,,
-Производство Комплектация Полиграфия,Финализировать дизайн новой коробки,Настя Крепак,"Виктория + Лиза",🔧 В работе,Высокий,,,
+Производство Комплектация Полиграфия,Финализировать дизайн новой коробки,Настя Крепак,Виктория + Лиза,🔧 В работе,Высокий,,,
 Производство Комплектация Полиграфия,Подготовить фото новой коробки для карточек/креативов,Лиза,Лиза,🟡 Ожидает,Средний,,,
 Производство Комплектация Полиграфия,Уточнить и передать финальный состав набора Маше,Настя Крепак,Настя Крепак,🔧 В работе,Высокий,,,
 Маркетинг и РК,Создать план запуска рекламной кампании по этапам,Настя Крепак,Виктория,⭕ Назначена,Высокий,,,
-Маркетинг и РК,Подготовить A/B тест обложек,Настя Крепак,"Лиза + Виктория",🟡 Ожидает,Высокий,,,
+Маркетинг и РК,Подготовить A/B тест обложек,Настя Крепак,Лиза + Виктория,🟡 Ожидает,Высокий,,,
 Маркетинг и РК,Протестировать 2–3 формулировки УТП в РК,Настя Крепак,Виктория,⭕ Назначена,Средний,,,
 Прочие задачи,Сделать инфографику второй картинки в стиле первой,Anrush,Лиза,⭕ Назначена,Средний,,,
 Прочие задачи,Массовая генерация embed-кодов Kinescope по API,Anrush,Anrush,✅ Готово,Низкий,,,
@@ -351,13 +384,20 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             const data = [];
 
             for (let i = 1; i < lines.length; i++) {
-                // Простая обработка CSV: Предполагаем, что разделитель - запятая, и удаляем кавычки.
-                // В реальном приложении нужна более сложная функция парсинга CSV с учетом кавычек.
-                const values = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g).map(v => v.replace(/"/g, '').trim());
-                if (values.length === headers.length) {
+                // Регулярное выражение для более корректного парсинга с учетом кавычек
+                const values = lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+
+                if (!values) continue; 
+
+                const cleanedValues = values.map(v => {
+                    v = v.replace(/^"|"$/g, '').trim(); 
+                    return v;
+                });
+
+                if (cleanedValues.length === headers.length) {
                     let item = {};
                     headers.forEach((header, index) => {
-                        item[header] = values[index];
+                        item[header] = cleanedValues[index];
                     });
                     data.push(normalizeTask(item, i));
                 } else {
@@ -407,6 +447,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 }, {});
                 renderTasks();
                 populateAssigneeDropdown();
+                populateCategoryDropdown(initialMockTasks);
             }
         }
 
@@ -415,29 +456,14 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
         };
 
         function startDataListeners() {
-            // В реальном приложении: загрузка реальных задач из Firestore
-            // Пока что просто рендерим моковые данные для демонстрации
+            // Моковая загрузка данных
             window.currentTasks = initialMockTasks.reduce((acc, task) => {
                 acc[task.id] = task;
                 return acc;
             }, {});
             renderTasks();
             populateAssigneeDropdown();
-            
-            // Здесь должна быть реальная логика onSnapshot для Firestore
-            /*
-            const q = query(window.getTasksCollectionRef());
-            onSnapshot(q, (snapshot) => {
-                let liveTasks = {};
-                snapshot.forEach(doc => {
-                    liveTasks[doc.id] = { id: doc.id, ...doc.data() };
-                });
-                window.currentTasks = { ...window.currentTasks, ...liveTasks }; // Объединяем мок и живые данные
-                renderTasks();
-            }, (error) => {
-                console.error("Error listening to Firestore:", error);
-            });
-            */
+            populateCategoryDropdown(initialMockTasks);
         }
         
         window.initApp = () => {
@@ -448,31 +474,46 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
         // 2. Логика Рендеринга и UI
         // ----------------------------------------------------------------------
 
-        function renderTasks(filterKey = 'all') {
+        function renderTasks() {
             const taskList = document.getElementById('taskList');
             const tasksArray = Object.values(window.currentTasks);
             
             const filteredTasks = tasksArray.filter(task => {
-                if (filterKey === 'all') return true;
-                if (filterKey === 'pending') return task.status !== 'done';
-                if (filterKey === 'overdue') return task.status !== 'done' && task.deadline && new Date(task.deadline) < new Date();
-                return task.status === filterKey;
+                // Фильтр по статусу
+                let statusMatch = true;
+                if (window.activeStatusFilter === 'pending') {
+                    statusMatch = task.status !== 'done';
+                } else if (window.activeStatusFilter === 'overdue') {
+                    const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+                    statusMatch = task.status !== 'done' && deadlineDate && deadlineDate < new Date();
+                } else if (window.activeStatusFilter !== 'all') {
+                    statusMatch = task.status === window.activeStatusFilter;
+                }
+                
+                // Фильтр по категории
+                let categoryMatch = true;
+                if (window.activeCategoryFilter !== 'all') {
+                    categoryMatch = task.category === window.activeCategoryFilter;
+                }
+                
+                return statusMatch && categoryMatch;
             });
 
             if (filteredTasks.length === 0) {
                 taskList.innerHTML = `<p class="text-center text-gray-500 pt-8">
-                    ${filterKey === 'all' ? 'Заданий пока нет.' : 'Заданий по этому фильтру нет.'}
+                    Нет задач по выбранным фильтрам.
                 </p>`;
                 return;
             }
 
-            // Обновление кнопок фильтров (моковая логика подсчета)
+            // Обновление кнопок фильтров
             updateFilterCounts(tasksArray);
             
             taskList.innerHTML = filteredTasks.map(task => {
                 const priorityInfo = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium;
                 const statusInfo = STATUS_MAP[task.status] || STATUS_MAP.assigned;
-                const isOverdue = task.deadline && task.status !== 'done' && new Date(task.deadline) < new Date();
+                const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+                const isOverdue = deadlineDate && task.status !== 'done' && deadlineDate < new Date();
                 
                 return `
                     <div class="task-card p-4 rounded-xl shadow-lg border-l-4 ${priorityInfo.class}" onclick="openModal('taskDetailModal', '${task.id}')">
@@ -495,28 +536,50 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                         </div>
                         
                         <!-- Статус и категория -->
-                        <div class="flex justify-between items-center text-xs">
-                            <span class="text-white px-2 py-1 rounded-full font-medium ${statusInfo.class}">${statusInfo.display}</span>
-                            <span class="text-gray-400">${task.category} | Комм.: ${task.comments ? task.comments.length : 0} | Правки: ${task.revisionCount || 0}</span>
+                        <div class="flex justify-between items-center text-xs pt-1 border-t border-gray-700 mt-1">
+                            <span class="text-white px-2 py-0.5 rounded-full font-medium ${statusInfo.class}">${statusInfo.display}</span>
+                            <span class="category-tag px-2 py-0.5 rounded-full font-medium">${task.category}</span>
+                            <span class="text-gray-400">Комм.: ${task.comments ? task.comments.length : 0} | Правки: ${task.revisionCount || 0}</span>
                         </div>
                     </div>
                 `;
             }).join('');
         }
         
+        // --- Логика фильтрации по статусу ---
         window.filterTasks = (filterKey) => {
+            window.activeStatusFilter = filterKey;
+            
             document.querySelectorAll('#statusFilterButtons button').forEach(btn => {
                 btn.classList.remove('bg-blue-600', 'text-white');
                 btn.classList.add('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
             });
 
-            const currentButton = document.getElementById(`filter-${filterKey}`);
+            const currentButton = document.getElementById(`filter-status-${filterKey}`);
             if(currentButton) {
                 currentButton.classList.remove('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
                 currentButton.classList.add('bg-blue-600', 'text-white');
             }
             
-            renderTasks(filterKey);
+            renderTasks();
+        };
+
+        // --- Логика фильтрации по категориям (НОВОЕ) ---
+        window.filterByCategory = (category) => {
+            window.activeCategoryFilter = category;
+            
+            document.querySelectorAll('#categoryFilterButtons button').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
+            });
+
+            const currentButton = document.getElementById(`filter-category-${category}`);
+            if(currentButton) {
+                currentButton.classList.remove('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
+                currentButton.classList.add('bg-blue-600', 'text-white');
+            }
+            
+            renderTasks();
         };
         
         function updateFilterCounts(tasks) {
@@ -527,7 +590,8 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 counts[task.status] = (counts[task.status] || 0) + 1;
                 if (task.status !== 'done') {
                     counts.pending++;
-                    if (task.deadline && new Date(task.deadline) < today) {
+                    const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+                    if (deadlineDate && deadlineDate < today) {
                         counts.overdue++;
                     }
                 }
@@ -535,29 +599,52 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
 
             const filterContainer = document.getElementById('statusFilterButtons');
             filterContainer.innerHTML = `
-                <button id="filter-all" class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterTasks('all')">Все (${counts.all})</button>
-                <button id="filter-in_progress" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200" onclick="filterTasks('in_progress')">${STATUS_MAP.in_progress.display} (${counts.in_progress})</button>
-                <button id="filter-assigned" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200" onclick="filterTasks('assigned')">${STATUS_MAP.assigned.display} (${counts.assigned})</button>
-                <button id="filter-on_hold" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200" onclick="filterTasks('on_hold')">${STATUS_MAP.on_hold.display} (${counts.on_hold})</button>
-                <button id="filter-done" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200" onclick="filterTasks('done')">${STATUS_MAP.done.display} (${counts.done})</button>
-                <button id="filter-overdue" class="px-3 py-1.5 rounded-full ${counts.overdue > 0 ? 'bg-red-600' : 'bg-gray-600'} hover:bg-red-500 text-white font-medium" onclick="filterTasks('overdue')">Просрочено (${counts.overdue})</button>
+                <button id="filter-status-all" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('all')">Все (${counts.all})</button>
+                <button id="filter-status-in_progress" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'in_progress' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('in_progress')">${STATUS_MAP.in_progress.display} (${counts.in_progress})</button>
+                <button id="filter-status-assigned" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'assigned' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('assigned')">${STATUS_MAP.assigned.display} (${counts.assigned})</button>
+                <button id="filter-status-on_hold" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'on_hold' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('on_hold')">${STATUS_MAP.on_hold.display} (${counts.on_hold})</button>
+                <button id="filter-status-done" class="px-3 py-1.5 rounded-full ${window.activeStatusFilter === 'done' ? 'bg-blue-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-200'}" onclick="filterTasks('done')">${STATUS_MAP.done.display} (${counts.done})</button>
+                <button id="filter-status-overdue" class="px-3 py-1.5 rounded-full ${counts.overdue > 0 || window.activeStatusFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-600 hover:bg-red-500 text-white font-medium'}" onclick="filterTasks('overdue')">Просрочено (${counts.overdue})</button>
             `;
-            // Убедимся, что начальный фильтр 'all' активен
-            document.getElementById('filter-all').classList.remove('bg-gray-600', 'hover:bg-gray-500', 'text-gray-200');
-            document.getElementById('filter-all').classList.add('bg-blue-600', 'text-white');
         }
-
+        
         function populateAssigneeDropdown() {
             const select = document.getElementById('taskAssignee');
             select.innerHTML = '<option value="" disabled selected>Выберите участника</option>';
             
-            // Получаем уникальных пользователей из карты
             Object.keys(USER_MAP).filter(key => key !== 'me').forEach(key => {
                 const user = USER_MAP[key];
                 const option = document.createElement('option');
                 option.value = user.id;
                 option.textContent = user.name;
                 select.appendChild(option);
+            });
+        }
+
+        function populateCategoryDropdown(tasks) {
+            const select = document.getElementById('taskCategory');
+            select.innerHTML = '<option value="" disabled selected>Выберите категорию</option>';
+            const uniqueCategories = new Set(tasks.map(t => t.category).filter(c => c));
+
+            const categoryFilterContainer = document.getElementById('categoryFilterButtons');
+            categoryFilterContainer.innerHTML = `
+                 <button id="filter-category-all" class="px-3 py-1.5 rounded-full bg-blue-600 text-white font-medium" onclick="filterByCategory('all')">Все Категории</button>
+            `;
+
+            uniqueCategories.forEach(category => {
+                // Для формы
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+                
+                // Для фильтра
+                const button = document.createElement('button');
+                button.id = `filter-category-${category}`;
+                button.className = 'px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200';
+                button.textContent = category;
+                button.onclick = () => filterByCategory(category);
+                categoryFilterContainer.appendChild(button);
             });
         }
 
@@ -577,9 +664,10 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 const statusInfo = STATUS_MAP[task.status] || STATUS_MAP.assigned;
                 
                 document.getElementById('detailTaskTitle').textContent = task.title;
-                document.getElementById('detailTaskTitle').classList.remove('text-red-400');
+                document.getElementById('detailTaskTitle').classList.remove('border-high', 'border-medium', 'border-low');
                 document.getElementById('detailTaskTitle').classList.add(PRIORITY_MAP[task.priority].class);
                 
+                document.getElementById('detailTaskCategory').textContent = task.category || 'Не указана'; // Отображение категории
                 document.getElementById('detailTaskAssignee').textContent = task.assigneeName;
                 document.getElementById('detailTaskDeadline').textContent = task.deadline || 'Срок не указан';
                 
@@ -591,7 +679,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 
                 const linksHtml = task.links ? 
                     `<span class="font-semibold text-gray-100">Ссылки:</span> <a href="${task.links}" target="_blank" class="text-blue-400 underline">${task.links}</a>` :
-                    '';
+                    '<span class="text-gray-500 italic">Ссылок нет.</span>';
                 document.getElementById('detailTaskLinks').innerHTML = linksHtml;
 
                 renderComments(task);
@@ -620,7 +708,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             
             commentsList.innerHTML = comments.map(comment => {
                 const isRevision = comment.isRevision;
-                const user = USER_MAP[comment.userId] || { name: 'Неизвестный' };
+                const user = Object.values(USER_MAP).find(u => u.id === comment.userId) || { name: 'Неизвестный' };
                 const time = comment.timestamp instanceof Date ? comment.timestamp.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
                 return `
@@ -634,7 +722,6 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             
             commentCount.textContent = comments.length;
             
-            // Прокрутка вниз
             setTimeout(() => {
                 commentsList.scrollTop = commentsList.scrollHeight;
             }, 0);
@@ -643,13 +730,13 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
         window.saveTask = async () => {
             const title = document.getElementById('taskTitle').value.trim();
             const description = document.getElementById('taskDescription').value.trim();
+            const category = document.getElementById('taskCategory').value;
             const assigneeId = document.getElementById('taskAssignee').value;
             const deadline = document.getElementById('taskDeadline').value;
             const priority = document.querySelector('input[name="priority"]:checked').value;
             
-            if (!title || !assigneeId || !deadline) {
-                // Вместо alert() используем консоль и простую визуальную метку
-                console.error('Validation failed: Title, Assignee, and Deadline are required.');
+            if (!title || !assigneeId || !deadline || !category) {
+                console.error('Validation failed: Title, Category, Assignee, and Deadline are required.');
                 return;
             }
 
@@ -663,25 +750,24 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 const newTaskData = {
                     title: title,
                     description: description,
+                    category: category,
                     assigneeId: assigneeId,
                     assigneeName: assigneeName,
                     deadline: deadline,
                     priority: priority,
-                    status: 'assigned', // Новая задача всегда "Назначена"
+                    status: 'assigned',
                     createdAt: serverTimestamp() || new Date(),
                     createdBy: window.userId,
                     comments: [],
                     revisionCount: 0
                 };
                 
-                // В реальном приложении: Сохранение в Firestore
                 if (db) {
                     const docRef = await addDoc(window.getTasksCollectionRef(), newTaskData);
                     console.log("Document written with ID: ", docRef.id);
                 } else {
-                    // Моковая логика для демонстрации в дизайне: добавляем в моковый список
                     const mockId = 'new-task-' + Date.now();
-                    window.currentTasks[mockId] = { ...newTaskData, id: mockId, isMock: true, createdAt: new Date() };
+                    window.currentTasks[mockId] = { ...newTaskData, id: mockId, isMock: false, createdAt: new Date(), isMock: true };
                     renderTasks();
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
@@ -690,12 +776,14 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 // Сброс формы
                 document.getElementById('taskTitle').value = '';
                 document.getElementById('taskDescription').value = '';
+                document.getElementById('taskCategory').value = '';
                 document.getElementById('taskAssignee').value = '';
                 document.getElementById('taskDeadline').value = '';
+                document.querySelector('input[name="priority"][value="medium"]').checked = true;
+
 
             } catch (e) {
                 console.error("Error saving task:", e);
-                // В реальном приложении: Показать сообщение об ошибке в модальном окне
             } finally {
                 button.disabled = false;
                 button.innerHTML = 'Сохранить Задание';
@@ -708,7 +796,6 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
              
              if (!commentText || !taskId) return;
              
-             // Найдем имя текущего пользователя для отображения
              const currentUserName = Object.values(USER_MAP).find(u => u.id === window.userId)?.name || 'Я (Создатель)';
 
              const newComment = {
@@ -722,18 +809,16 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
              const task = window.currentTasks[taskId];
              
              if (db && !task.isMock) {
-                 // Реальное обновление в Firestore (только для не-мок задач)
                  const docRef = doc(window.getTasksCollectionRef(), taskId);
                  await updateDoc(docRef, {
                      comments: arrayUnion(newComment),
                      revisionCount: isRevision ? increment(1) : task.revisionCount
                  });
              } else {
-                 // Моковая логика: обновление локального объекта и перерисовка
                  task.comments = [...(task.comments || []), newComment];
                  if (isRevision) task.revisionCount = (task.revisionCount || 0) + 1;
                  renderComments(task);
-                 renderTasks(); // Обновим счетчики на главной
+                 renderTasks();
              }
              
              document.getElementById('newCommentText').value = '';
@@ -744,14 +829,10 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             const task = window.currentTasks[taskId];
             if (!task) return;
 
-            console.log(`Updating task ${taskId} status to: ${newStatus}`);
-
             if (db && !task.isMock) {
-                // Реальное обновление в Firestore
                 const docRef = doc(window.getTasksCollectionRef(), taskId);
                 await updateDoc(docRef, { status: newStatus });
             } else {
-                // Моковая логика
                 task.status = newStatus;
                 renderTasks();
                 closeModal('taskDetailModal');
