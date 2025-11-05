@@ -79,7 +79,7 @@
         <!-- Заголовок и кнопка "Новое Задание" -->
         <header class="flex justify-between items-center pb-2 border-b border-gray-600">
             <h1 class="text-2xl font-bold">CRM Группы (10 чел.)</h1>
-            <button onclick="openModal('newTaskModal')" 
+            <button onclick="window.openModal('newTaskModal')" 
                     class="tg-button px-4 py-2 text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                 + Новое Задание
             </button>
@@ -89,7 +89,7 @@
         <div class="space-y-2">
             <!-- Кнопка сброса фильтров -->
             <div class="flex">
-                <button onclick="resetFilters()" class="px-3 py-1.5 rounded-xl bg-gray-700 text-gray-300 text-sm hover:bg-gray-600 w-full">Сбросить все фильтры</button>
+                <button onclick="window.resetFilters()" class="px-3 py-1.5 rounded-xl bg-gray-700 text-gray-300 text-sm hover:bg-gray-600 w-full">Сбросить все фильтры</button>
             </div>
              <!-- Фильтр 1: Статус -->
             <div class="flex space-x-2 p-2 bg-gray-800 rounded-xl shadow-inner text-xs overflow-x-auto" id="statusFilterButtons">
@@ -181,11 +181,11 @@
 
                 <!-- Кнопки управления -->
                 <div class="flex justify-end space-x-3 pt-4">
-                    <button onclick="closeModal('newTaskModal')" 
+                    <button onclick="window.closeModal('newTaskModal')" 
                             class="px-4 py-2 text-gray-300 rounded-lg hover:bg-gray-700 focus:outline-none">
                         Отмена
                     </button>
-                    <button onclick="saveTask()" id="saveTaskButton"
+                    <button onclick="window.saveTask()" id="saveTaskButton"
                             class="tg-button px-6 py-2 font-semibold rounded-lg focus:outline-none">
                         Сохранить Задание
                     </button>
@@ -236,7 +236,7 @@
                                 <input type="checkbox" id="isRevision" class="mr-2 form-checkbox text-red-500">
                                 Внести правку (Отметка)
                             </label>
-                            <button onclick="addComment(window.currentTaskId)" 
+                            <button onclick="window.addComment(window.currentTaskId)" 
                                     class="tg-button px-4 py-1.5 text-sm rounded-lg">
                                 Отправить
                             </button>
@@ -246,11 +246,11 @@
 
                 <!-- Кнопки управления деталями -->
                 <div class="flex justify-end space-x-3 pt-4 border-t border-gray-700">
-                    <button onclick="closeModal('taskDetailModal')" 
+                    <button onclick="window.closeModal('taskDetailModal')" 
                             class="px-4 py-2 text-gray-300 rounded-lg hover:bg-gray-700 focus:outline-none">
                         Закрыть
                     </button>
-                    <button onclick="updateTaskStatus(window.currentTaskId, 'done')" id="completeTaskButton"
+                    <button onclick="window.updateTaskStatus(window.currentTaskId, 'done')" id="completeTaskButton"
                             class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg focus:outline-none">
                         Завершить Задачу
                     </button>
@@ -481,6 +481,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             populateCategoryDropdown(initialMockTasks);
         }
         
+        // Перенесена в window, чтобы быть доступной в HTML
         window.initApp = () => {
             initFirebase();
         };
@@ -524,6 +525,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             // Обновление кнопок фильтров
             updateFilterCounts(tasksArray);
             
+            // ПРИМЕНЕНО ИСПРАВЛЕНИЕ: Используем `data-task-id` вместо `onclick` для более надежной привязки
             taskList.innerHTML = filteredTasks.map(task => {
                 const priorityInfo = PRIORITY_MAP[task.priority] || PRIORITY_MAP.medium;
                 const statusInfo = STATUS_MAP[task.status] || STATUS_MAP.assigned;
@@ -531,7 +533,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 const isOverdue = deadlineDate && task.status !== 'done' && deadlineDate < new Date();
                 
                 return `
-                    <div class="task-card p-4 rounded-xl shadow-lg border-l-4 ${priorityInfo.class}" onclick="openModal('taskDetailModal', '${task.id}')">
+                    <div class="task-card p-4 rounded-xl shadow-lg border-l-4 ${priorityInfo.class}" data-task-id="${task.id}">
                         <div class="flex justify-between items-start mb-2">
                             <h2 class="text-lg font-semibold truncate pr-4">${task.title}</h2>
                             <span class="text-xs font-bold text-gray-300 bg-gray-700/50 px-2 py-0.5 rounded-full">${priorityInfo.display}</span>
@@ -559,8 +561,26 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                     </div>
                 `;
             }).join('');
+            
+            // ПРИМЕНЕНО ИСПРАВЛЕНИЕ: Добавляем обработчик событий после рендеринга
+            attachTaskClickHandlers();
         }
         
+        // НОВАЯ ФУНКЦИЯ: Прикрепление обработчиков клика
+        function attachTaskClickHandlers() {
+            document.querySelectorAll('.task-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    const taskId = card.getAttribute('data-task-id');
+                    if (window.openModal) {
+                        window.openModal('taskDetailModal', taskId);
+                    } else {
+                        console.error("openModal function not found on window.");
+                    }
+                });
+            });
+        }
+
+
         // --- Логика сброса фильтров ---
         window.resetFilters = () => {
             window.activeStatusFilter = 'all';
@@ -618,12 +638,12 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             // Обновление кнопок статуса
             const filterContainer = document.getElementById('statusFilterButtons');
             filterContainer.innerHTML = `
-                <button id="filter-status-all" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'all' ? 'active-filter' : ''}" onclick="filterTasks('all')">Все (${counts.all})</button>
-                <button id="filter-status-in_progress" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'in_progress' ? 'active-filter' : ''}" onclick="filterTasks('in_progress')">${STATUS_MAP.in_progress.display} (${counts.in_progress})</button>
-                <button id="filter-status-assigned" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'assigned' ? 'active-filter' : ''}" onclick="filterTasks('assigned')">${STATUS_MAP.assigned.display} (${counts.assigned})</button>
-                <button id="filter-status-on_hold" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'on_hold' ? 'active-filter' : ''}" onclick="filterTasks('on_hold')">${STATUS_MAP.on_hold.display} (${counts.on_hold})</button>
-                <button id="filter-status-done" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'done' ? 'active-filter' : ''}" onclick="filterTasks('done')">${STATUS_MAP.done.display} (${counts.done})</button>
-                <button id="filter-status-overdue" class="px-3 py-1.5 rounded-full ${counts.overdue > 0 || window.activeStatusFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-600 hover:bg-red-500 text-white font-medium'} ${window.activeStatusFilter === 'overdue' ? 'active-filter' : ''}" onclick="filterTasks('overdue')">Просрочено (${counts.overdue})</button>
+                <button id="filter-status-all" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'all' ? 'active-filter' : ''}" onclick="window.filterTasks('all')">Все (${counts.all})</button>
+                <button id="filter-status-in_progress" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'in_progress' ? 'active-filter' : ''}" onclick="window.filterTasks('in_progress')">${STATUS_MAP.in_progress.display} (${counts.in_progress})</button>
+                <button id="filter-status-assigned" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'assigned' ? 'active-filter' : ''}" onclick="window.filterTasks('assigned')">${STATUS_MAP.assigned.display} (${counts.assigned})</button>
+                <button id="filter-status-on_hold" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'on_hold' ? 'active-filter' : ''}" onclick="window.filterTasks('on_hold')">${STATUS_MAP.on_hold.display} (${counts.on_hold})</button>
+                <button id="filter-status-done" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeStatusFilter === 'done' ? 'active-filter' : ''}" onclick="window.filterTasks('done')">${STATUS_MAP.done.display} (${counts.done})</button>
+                <button id="filter-status-overdue" class="px-3 py-1.5 rounded-full ${counts.overdue > 0 || window.activeStatusFilter === 'overdue' ? 'bg-red-600 text-white' : 'bg-gray-600 hover:bg-red-500 text-white font-medium'} ${window.activeStatusFilter === 'overdue' ? 'active-filter' : ''}" onclick="window.filterTasks('overdue')">Просрочено (${counts.overdue})</button>
             `;
             
             // Если "Просрочено" активно, но не должно быть, убираем синий акцент, оставляем красный
@@ -653,7 +673,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
 
             const categoryFilterContainer = document.getElementById('categoryFilterButtons');
             categoryFilterContainer.innerHTML = `
-                 <button id="filter-category-all" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeCategoryFilter === 'all' ? 'active-filter' : ''}" onclick="filterByCategory('all')">Все Категории</button>
+                 <button id="filter-category-all" class="px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeCategoryFilter === 'all' ? 'active-filter' : ''}" onclick="window.filterByCategory('all')">Все Категории</button>
             `;
 
             uniqueCategories.forEach(category => {
@@ -668,7 +688,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                 button.id = `filter-category-${category}`;
                 button.className = `px-3 py-1.5 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-200 ${window.activeCategoryFilter === category ? 'active-filter' : ''}`;
                 button.textContent = category;
-                button.onclick = () => filterByCategory(category);
+                button.onclick = () => window.filterByCategory(category); // Обновлено
                 categoryFilterContainer.appendChild(button);
             });
         }
@@ -681,20 +701,25 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             if (id === 'taskDetailModal' && taskId) {
                 const task = window.currentTasks[taskId];
                 if (!task) {
-                    // Это была главная причина ошибки. Если задача не найдена, модальное окно не может быть заполнено.
                     console.error("Task not found with ID:", taskId);
-                    closeModal(id);
+                    window.closeModal(id);
                     return;
                 }
                 
                 const statusInfo = STATUS_MAP[task.status] || STATUS_MAP.assigned;
                 
                 document.getElementById('detailTaskTitle').textContent = task.title;
-                document.getElementById('detailTaskTitle').classList.remove('border-high', 'border-medium', 'border-low');
-                document.getElementById('detailTaskTitle').classList.add(PRIORITY_MAP[task.priority].class);
+                
+                const titleElement = document.getElementById('detailTaskTitle');
+                titleElement.classList.remove('border-high', 'border-medium', 'border-low');
+                titleElement.classList.add(PRIORITY_MAP[task.priority].class);
                 
                 document.getElementById('detailTaskCategory').textContent = task.category || 'Не указана'; // Отображение категории
-                document.getElementById('detailTaskAssignee').textContent = task.assigneeName;
+                
+                // Исправление поиска имени исполнителя в моковом режиме
+                const assigneeName = task.assigneeName || Object.values(USER_MAP).find(u => u.id === task.assigneeId)?.name || 'Не назначен';
+                document.getElementById('detailTaskAssignee').textContent = assigneeName;
+
                 document.getElementById('detailTaskDeadline').textContent = task.deadline || 'Срок не указан';
                 
                 const statusSpan = document.getElementById('detailTaskStatus');
@@ -801,7 +826,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
-                closeModal('newTaskModal');
+                window.closeModal('newTaskModal');
                 // Сброс формы
                 document.getElementById('taskTitle').value = '';
                 document.getElementById('taskDescription').value = '';
@@ -864,7 +889,7 @@ IT и Боты и Автоматизация,Реализовать CRM в Teleg
             } else {
                 task.status = newStatus;
                 renderTasks();
-                closeModal('taskDetailModal');
+                window.closeModal('taskDetailModal');
             }
         };
 
